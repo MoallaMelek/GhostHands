@@ -1,24 +1,209 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GhostHands · Learning by watching</title><link rel="stylesheet" href="/static/style.css"></head>
-<body>
-<header><a class="brand" href="/" aria-label="GhostHands home"><span class="logo">⌘</span> GhostHands<span class="version">RESEARCH PROTOTYPE / 01</span></a><span class="system"><i></i> LOCAL LEARNING LAB</span></header>
-<main>
-<section class="intro"><div><p class="eyebrow">LEARNING FROM DEMONSTRATION</p><h1>Your hands.<br><span>A learned behavior.</span></h1><p class="description">Demonstrate a placement. Change the scene.<br>Find out what the model actually learned.</p></div><div class="intro-note"><span class="index">01 / PICK & PLACE</span><p>One object. A new layout.<br>No coordinate replay.</p><div class="tags"><span>PYTORCH</span><span>STATE-BASED BC</span><span>LIVE INFERENCE</span></div></div></section>
-<section class="workspace" aria-label="Demonstration and learned execution">
-<article class="panel"><div class="panel-heading"><div><span class="number">01</span><h2>Human demonstration</h2></div><span class="badge" id="inputBadge">POINTER INPUT</span></div>
-<div class="scene-wrap"><canvas id="human" aria-label="Human controlled tabletop" tabindex="0"></canvas><div class="scene-label">TEACH THE MOVEMENT</div><div class="video-wrap" hidden id="videoWrap"><video id="video" autoplay playsinline muted></video><canvas id="landmarks"></canvas></div><div class="scene-footer"><span id="handStatus">Move across the table · wheel to lift</span><span id="recordStatus">● NOT RECORDING</span></div></div>
-<div class="controls"><button id="camera">Enable webcam</button><button id="calibrate" disabled>Calibrate depth</button><button id="newDemo">New layout</button></div>
-<div class="sliders"><label>Height <input id="height" type="range" min="0.04" max="0.5" step="0.005" value="0.32"></label><label>Rotation <input id="yaw" type="range" min="-3.14" max="3.14" step="0.03" value="0"></label><button id="grip" aria-pressed="false">Close gripper</button></div>
-<div class="record-row"><select id="split" aria-label="Dataset split"><option value="train">Training episode</option><option value="val">Validation episode</option><option value="test">Test episode</option></select><button id="record" class="primary">● Record demonstration</button><button id="save" disabled>Save</button></div>
-<p class="hint">Pointer: move to position · wheel = height · Q/E = rotation · Space = grip.<br>Webcam: pinch = grip · palm direction = yaw · palm scale = approximate depth.</p></article>
-<div class="bridge" aria-hidden="true"><span>→</span><small>LEARN<br>TRANSFER</small></div>
-<article class="panel"><div class="panel-heading"><div><span class="number">02</span><h2>Learned execution</h2></div><span class="badge green">NEW LAYOUT</span></div>
-<div class="scene-wrap"><canvas id="robot" aria-label="Learned robot tabletop"></canvas><div class="scene-label" id="robotLabel">POLICY READY</div><div class="scene-footer"><span id="seedLabel">LAYOUT 20000</span><span id="executionStatus">AWAITING RUN</span></div></div>
-<div class="controls run-controls"><select id="model" aria-label="Learned policy"><option value="relative">Relative BC · synthetic</option><option value="absolute">Absolute BC · synthetic</option><option value="recurrent">Recurrent BC · synthetic</option><option value="human">My demonstrations · human BC</option></select><button class="primary" id="run">Run on new layout ↗</button></div>
-<div class="controls"><button id="moveObject">Move object</button><button id="moveTarget">Move target</button><button id="pause">Pause / resume</button></div>
-<div class="metrics"><div><small>PLACEMENT ERROR</small><strong id="error">—</strong></div><div><small>TRAINING EPISODES</small><strong id="demoCount">—</strong></div><div><small>POLICY STEPS</small><strong id="steps">0 <em>/ 180</em></strong></div></div>
-<p class="hint" id="provenance">Included checkpoints learn from a scripted synthetic teacher. Record and train your own episodes to test learning from your hands.</p></article></section>
-<section class="bottom"><article class="training"><p class="eyebrow">YOUR DATASET</p><h3>Make the skill yours.</h3><p id="counts">0 training · 0 validation · 0 test episodes</p><button id="train">Train on my demonstrations →</button><p class="hint" id="job">Use varied layouts. Start with 20–50 successful episodes; reserve independent validation and test layouts.</p></article><article class="evidence"><div class="evidence-title"><div><p class="eyebrow">MEASURED, NOT CHERRY-PICKED</p><h3>Unseen-layout benchmark</h3></div><span class="badge">SYNTHETIC DATA</span></div><table><thead><tr><th>Policy</th><th>Held out</th><th>Spatial shift</th><th>Moved target</th></tr></thead><tbody id="results"><tr><td colspan="4">Evaluation results not yet available.</td></tr></tbody></table><p class="hint">100 layouts per suite · one training seed · full failures and confidence intervals in the repository.</p></article></section>
-<div id="message" role="status" aria-live="polite">Ready. Run a learned policy or record a demonstration.</div>
-<footer><span>GHOSTHANDS / EXPERIMENT 001</span><span>Kinematic simulation · virtual objects · no physical robot claims</span></footer>
-</main><script type="module" src="/static/app.js"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GhostHands · Learning by watching</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/" aria-label="GhostHands home"
+        ><span class="logo">⌘</span> GhostHands<span class="version"
+          >RESEARCH PROTOTYPE / 01</span
+        ></a
+      ><span class="system"><i></i> LOCAL LEARNING LAB</span>
+    </header>
+    <main>
+      <section class="intro">
+        <div>
+          <p class="eyebrow">LEARNING FROM DEMONSTRATION</p>
+          <h1>Your hands.<br /><span>A learned behavior.</span></h1>
+          <p class="description">
+            Demonstrate a placement. Change the scene.<br />Find out what the
+            model actually learned.
+          </p>
+        </div>
+        <div class="intro-note">
+          <span class="index">01 / PICK & PLACE</span>
+          <p>One object. A new layout.<br />No coordinate replay.</p>
+          <div class="tags">
+            <span>PYTORCH</span><span>STATE-BASED BC</span
+            ><span>LIVE INFERENCE</span>
+          </div>
+        </div>
+      </section>
+      <section
+        class="workspace"
+        aria-label="Demonstration and learned execution"
+      >
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <span class="number">01</span>
+              <h2>Human demonstration</h2>
+            </div>
+            <span class="badge" id="inputBadge">POINTER INPUT</span>
+          </div>
+          <div class="scene-wrap">
+            <canvas
+              id="human"
+              aria-label="Human controlled tabletop"
+              tabindex="0"
+            ></canvas>
+            <div class="scene-label">TEACH THE MOVEMENT</div>
+            <div class="video-wrap" hidden id="videoWrap">
+              <video id="video" autoplay playsinline muted></video
+              ><canvas id="landmarks"></canvas>
+            </div>
+            <div class="scene-footer">
+              <span id="handStatus">Move across the table · wheel to lift</span
+              ><span id="recordStatus">● NOT RECORDING</span>
+            </div>
+          </div>
+          <div class="controls">
+            <button id="camera">Enable webcam</button
+            ><button id="calibrate" disabled>Calibrate depth</button
+            ><button id="newDemo">New layout</button>
+          </div>
+          <div class="sliders">
+            <label
+              >Height
+              <input
+                id="height"
+                type="range"
+                min="0.04"
+                max="0.5"
+                step="0.005"
+                value="0.32" /></label
+            ><label
+              >Rotation
+              <input
+                id="yaw"
+                type="range"
+                min="-3.14"
+                max="3.14"
+                step="0.03"
+                value="0" /></label
+            ><button id="grip" aria-pressed="false">Close gripper</button>
+          </div>
+          <div class="record-row">
+            <select id="split" aria-label="Dataset split">
+              <option value="train">Training episode</option>
+              <option value="val">Validation episode</option>
+              <option value="test">Test episode</option></select
+            ><button id="record" class="primary">● Record demonstration</button
+            ><button id="save" disabled>Save</button>
+          </div>
+          <p class="hint">
+            Pointer: move to position · wheel = height · Q/E = rotation · Space
+            = grip.<br />Webcam: pinch = grip · palm direction = yaw · palm
+            scale = approximate depth.
+          </p>
+        </article>
+        <div class="bridge" aria-hidden="true">
+          <span>→</span><small>LEARN<br />TRANSFER</small>
+        </div>
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <span class="number">02</span>
+              <h2>Learned execution</h2>
+            </div>
+            <span class="badge green">NEW LAYOUT</span>
+          </div>
+          <div class="scene-wrap">
+            <canvas id="robot" aria-label="Learned robot tabletop"></canvas>
+            <div class="scene-label" id="robotLabel">POLICY READY</div>
+            <div class="scene-footer">
+              <span id="seedLabel">LAYOUT 20000</span
+              ><span id="executionStatus">AWAITING RUN</span>
+            </div>
+          </div>
+          <div class="controls run-controls">
+            <select id="model" aria-label="Learned policy">
+              <option value="relative">Relative BC · synthetic</option>
+              <option value="absolute">Absolute BC · synthetic</option>
+              <option value="recurrent">Recurrent BC · synthetic</option>
+              <option value="human">
+                My demonstrations · human BC
+              </option></select
+            ><button class="primary" id="run">Run on new layout ↗</button>
+          </div>
+          <div class="controls">
+            <button id="moveObject">Move object</button
+            ><button id="moveTarget">Move target</button
+            ><button id="pause">Pause / resume</button>
+          </div>
+          <div class="metrics">
+            <div>
+              <small>PLACEMENT ERROR</small><strong id="error">—</strong>
+            </div>
+            <div>
+              <small>TRAINING EPISODES</small><strong id="demoCount">—</strong>
+            </div>
+            <div>
+              <small>POLICY STEPS</small
+              ><strong id="steps">0 <em>/ 180</em></strong>
+            </div>
+          </div>
+          <p class="hint" id="provenance">
+            Included checkpoints learn from a scripted synthetic teacher. Record
+            and train your own episodes to test learning from your hands.
+          </p>
+        </article>
+      </section>
+      <section class="bottom">
+        <article class="training">
+          <p class="eyebrow">YOUR DATASET</p>
+          <h3>Make the skill yours.</h3>
+          <p id="counts">0 training · 0 validation · 0 test episodes</p>
+          <button id="train">Train on my demonstrations →</button>
+          <p class="hint" id="job">
+            Use varied layouts. Start with 20–50 successful episodes; reserve
+            independent validation and test layouts.
+          </p>
+        </article>
+        <article class="evidence">
+          <div class="evidence-title">
+            <div>
+              <p class="eyebrow">MEASURED, NOT CHERRY-PICKED</p>
+              <h3>Unseen-layout benchmark</h3>
+            </div>
+            <span class="badge">SYNTHETIC DATA</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Policy</th>
+                <th>Held out</th>
+                <th>Spatial shift</th>
+                <th>Moved target</th>
+              </tr>
+            </thead>
+            <tbody id="results">
+              <tr>
+                <td colspan="4">Evaluation results not yet available.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="hint">
+            100 layouts per suite · one training seed · full failures and
+            confidence intervals in the repository.
+          </p>
+        </article>
+      </section>
+      <div id="message" role="status" aria-live="polite">
+        Ready. Run a learned policy or record a demonstration.
+      </div>
+      <footer>
+        <span>GHOSTHANDS / EXPERIMENT 001</span
+        ><span
+          >Kinematic simulation · virtual objects · no physical robot
+          claims</span
+        >
+      </footer>
+    </main>
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>

@@ -143,6 +143,8 @@ async def run(sid: str, req: Run):
 @app.post("/api/{sid}/tick")
 async def tick(sid: str):
     s = session(sid)
+    if job["status"] == "training":
+        raise HTTPException(409, "Wait for training to finish")
     if s["running"]:
         s["robot"].step(s["agent"].action(s["robot"].state))
         if s["robot"].success or s["robot"].steps >= HORIZON:
@@ -153,6 +155,8 @@ async def tick(sid: str):
 @app.post("/api/{sid}/pause")
 async def pause(sid: str):
     s = session(sid)
+    if job["status"] == "training":
+        raise HTTPException(409, "Wait for training to finish")
     if s["agent"] and s["robot"].steps < HORIZON and not s["robot"].success:
         s["running"] = not s["running"]
     return snapshot(s)

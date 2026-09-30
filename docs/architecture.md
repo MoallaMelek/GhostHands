@@ -78,5 +78,7 @@ saved on explicit recording. Human-only training is available but requires multi
 
 ## Local setup notes
 Requested AI_TEAM.md and AGENTS.md templates were absent at the provided template path.
-No substitute collaboration protocol was invented. Local GitHub CLI authentication was
-invalid at project creation; remote publication remains pending authenticated access.
+No substitute collaboration protocol was invented. The restricted network initially made
+GitHub authentication appear invalid; an unrestricted check confirmed authenticated access.
+The requested dedicated Codex CLI review was attempted, but its execution environment
+could not recognize the repository. This is not a completed independent review.

@@ -1,0 +1,258 @@
+{
+  "training_seeds": 1,
+  "checkpoint_metadata": {
+    "absolute": {
+      "kind": "absolute",
+      "seed": 42,
+      "source": "synthetic_teacher",
+      "train_episodes": 240,
+      "val_episodes": 40,
+      "dataset_sha256": "a68f2d1c5f246fc2f5542f556bd37dc1377998b501d39b77973b7dc71ac6b561",
+      "schema": 1,
+      "torch_version": "2.10.0+cpu",
+      "context": 8,
+      "epochs_requested": 60,
+      "epoch": 60,
+      "val_loss": 0.04253319611129925
+    },
+    "relative": {
+      "kind": "relative",
+      "seed": 42,
+      "source": "synthetic_teacher",
+      "train_episodes": 240,
+      "val_episodes": 40,
+      "dataset_sha256": "a68f2d1c5f246fc2f5542f556bd37dc1377998b501d39b77973b7dc71ac6b561",
+      "schema": 1,
+      "torch_version": "2.10.0+cpu",
+      "context": 8,
+      "epochs_requested": 60,
+      "epoch": 60,
+      "val_loss": 0.01980094755355221
+    },
+    "recurrent": {
+      "kind": "recurrent",
+      "seed": 42,
+      "source": "synthetic_teacher",
+      "train_episodes": 240,
+      "val_episodes": 40,
+      "dataset_sha256": "a68f2d1c5f246fc2f5542f556bd37dc1377998b501d39b77973b7dc71ac6b561",
+      "schema": 1,
+      "torch_version": "2.10.0+cpu",
+      "context": 8,
+      "epochs_requested": 60,
+      "epoch": 57,
+      "val_loss": 0.011950796719572158
+    }
+  },
+  "results": [
+    {
+      "suite": "held_out",
+      "model": "replay",
+      "n": 100,
+      "success_rate": 0.0,
+      "success_ci95": [
+        0,
+        0.03699480747600191
+      ],
+      "mean_placement_error": 0.3473153387010097,
+      "mean_yaw_error": 1.5991896510124206,
+      "mean_success_efficiency": null
+    },
+    {
+      "suite": "held_out",
+      "model": "absolute",
+      "n": 100,
+      "success_rate": 0.46,
+      "success_ci95": [
+        0.36560643853331865,
+        0.5573531460647615
+      ],
+      "mean_placement_error": 0.1768357638071757,
+      "mean_yaw_error": 0.3819321846961975,
+      "mean_success_efficiency": 0.5799821225248126
+    },
+    {
+      "suite": "held_out",
+      "model": "relative",
+      "n": 100,
+      "success_rate": 0.97,
+      "success_ci95": [
+        0.915479219195973,
+        0.9897456617765851
+      ],
+      "mean_placement_error": 0.021379449269734323,
+      "mean_yaw_error": 0.027703139781951904,
+      "mean_success_efficiency": 0.559962614612114
+    },
+    {
+      "suite": "held_out",
+      "model": "recurrent",
+      "n": 100,
+      "success_rate": 1.0,
+      "success_ci95": [
+        0.9630051925239981,
+        0.9999999999999999
+      ],
+      "mean_placement_error": 0.012310941480100155,
+      "mean_yaw_error": 0.0045099186897277835,
+      "mean_success_efficiency": 0.5446796482684401
+    },
+    {
+      "suite": "spatial_ood",
+      "model": "replay",
+      "n": 100,
+      "success_rate": 0.0,
+      "success_ci95": [
+        0,
+        0.03699480747600191
+      ],
+      "mean_placement_error": 0.47985359862446786,
+      "mean_yaw_error": 1.5264009380340575,
+      "mean_success_efficiency": null
+    },
+    {
+      "suite": "spatial_ood",
+      "model": "absolute",
+      "n": 100,
+      "success_rate": 0.36,
+      "success_ci95": [
+        0.2727107459049014,
+        0.45764780018837914
+      ],
+      "mean_placement_error": 0.28294928577262907,
+      "mean_yaw_error": 0.5998210501670838,
+      "mean_success_efficiency": 0.6214530322536983
+    },
+    {
+      "suite": "spatial_ood",
+      "model": "relative",
+      "n": 100,
+      "success_rate": 0.93,
+      "success_ci95": [
+        0.8625032899347025,
+        0.965681175635936
+      ],
+      "mean_placement_error": 0.04041319387964904,
+      "mean_yaw_error": 0.14093236684799193,
+      "mean_success_efficiency": 0.6030922683923778
+    },
+    {
+      "suite": "spatial_ood",
+      "model": "recurrent",
+      "n": 100,
+      "success_rate": 0.98,
+      "success_ci95": [
+        0.9299868370580063,
+        0.9944981477650318
+      ],
+      "mean_placement_error": 0.025436955315526574,
+      "mean_yaw_error": 0.03661610126495361,
+      "mean_success_efficiency": 0.5909435641292434
+    },
+    {
+      "suite": "target_shift",
+      "model": "replay",
+      "n": 100,
+      "success_rate": 0.0,
+      "success_ci95": [
+        0,
+        0.03699480747600191
+      ],
+      "mean_placement_error": 0.3169151515234262,
+      "mean_yaw_error": 1.517167568206787,
+      "mean_success_efficiency": null
+    },
+    {
+      "suite": "target_shift",
+      "model": "absolute",
+      "n": 100,
+      "success_rate": 0.45,
+      "success_ci95": [
+        0.3561437510640346,
+        0.5475557296835656
+      ],
+      "mean_placement_error": 0.1666878203675151,
+      "mean_yaw_error": 0.3153878450393677,
+      "mean_success_efficiency": null
+    },
+    {
+      "suite": "target_shift",
+      "model": "relative",
+      "n": 100,
+      "success_rate": 0.98,
+      "success_ci95": [
+        0.9299868370580063,
+        0.9944981477650318
+      ],
+      "mean_placement_error": 0.01867863624356687,
+      "mean_yaw_error": 0.0136895751953125,
+      "mean_success_efficiency": null
+    },
+    {
+      "suite": "target_shift",
+      "model": "recurrent",
+      "n": 100,
+      "success_rate": 0.99,
+      "success_ci95": [
+        0.9455124752390653,
+        0.9982326134344526
+      ],
+      "mean_placement_error": 0.019903556387871505,
+      "mean_yaw_error": 0.006500835418701172,
+      "mean_success_efficiency": null
+    },
+    {
+      "suite": "object_shift",
+      "model": "replay",
+      "n": 100,
+      "success_rate": 0.0,
+      "success_ci95": [
+        0,
+        0.03699480747600191
+      ],
+      "mean_placement_error": 0.2984216629713774,
+      "mean_yaw_error": 1.6665413451194764,
+      "mean_success_efficiency": null
+    },
+    {
+      "suite": "object_shift",
+      "model": "absolute",
+      "n": 100,
+      "success_rate": 0.17,
+      "success_ci95": [
+        0.10893476059773155,
+        0.25548181233642975
+      ],
+      "mean_placement_error": 0.23479232845827938,
+      "mean_yaw_error": 0.5634246218204498,
+      "mean_success_efficiency": null
+    },
+    {
+      "suite": "object_shift",
+      "model": "relative",
+      "n": 100,
+      "success_rate": 0.68,
+      "success_ci95": [
+        0.5833719774632081,
+        0.7633098918454312
+      ],
+      "mean_placement_error": 0.08038942243903875,
+      "mean_yaw_error": 0.18877687454223632,
+      "mean_success_efficiency": null
+    },
+    {
+      "suite": "object_shift",
+      "model": "recurrent",
+      "n": 100,
+      "success_rate": 0.97,
+      "success_ci95": [
+        0.915479219195973,
+        0.9897456617765851
+      ],
+      "mean_placement_error": 0.029124276293441654,
+      "mean_yaw_error": 0.0433220648765564,
+      "mean_success_efficiency": null
+    }
+  ],
+  "reporting_note": "Intervention efficiency omitted: initial-layout path bound is invalid after teleportation; outcomes and errors unchanged."
+}
