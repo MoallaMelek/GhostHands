@@ -61,12 +61,12 @@ def snapshot(s: dict) -> dict:
 
 
 @app.get("/")
-def index():
+async def index():
     return FileResponse(UI / "index.html")
 
 
 @app.post("/api/session")
-def create(req: NewSession):
+async def create(req: NewSession):
     if len(sessions) >= 32:
         sessions.pop(next(iter(sessions)))
     sid = secrets.token_hex(16)
@@ -76,7 +76,7 @@ def create(req: NewSession):
 
 
 @app.post("/api/{sid}/control")
-def control(sid: str, req: Control):
+async def control(sid: str, req: Control):
     s = session(sid)
     action = np.asarray(req.action, dtype=np.float32)
     if not np.isfinite(action).all() or np.abs(action).max() > 1.001:
@@ -98,19 +98,19 @@ def control(sid: str, req: Control):
 
 
 @app.post("/api/{sid}/record")
-def record(sid: str, req: Record):
+async def record(sid: str, req: Record):
     s = session(sid)
     if s["record"] is not None:
         raise HTTPException(409, "Save current recording first")
-    if s["human"].steps != 0:
-        raise HTTPException(409, "Start a new layout before recording")
+    # A recording always starts from the complete canonical reset state.
+    s["human"] = Tabletop(s["seed"])
     s["record"] = {"schema": 1, "source": req.source, "split": req.split,
                     "seed": s["seed"], "dt": 0.05, "observations": [], "actions": [], "landmarks": []}
     return snapshot(s)
 
 
 @app.post("/api/{sid}/save")
-def save(sid: str):
+async def save(sid: str):
     s = session(sid)
     ep = s["record"]
     if ep is None:
@@ -125,7 +125,7 @@ def save(sid: str):
 
 
 @app.post("/api/{sid}/run")
-def run(sid: str, req: Run):
+async def run(sid: str, req: Run):
     if job["status"] == "training":
         raise HTTPException(409, "Wait for training to finish")
     s = session(sid)
@@ -141,7 +141,7 @@ def run(sid: str, req: Run):
 
 
 @app.post("/api/{sid}/tick")
-def tick(sid: str):
+async def tick(sid: str):
     s = session(sid)
     if s["running"]:
         s["robot"].step(s["agent"].action(s["robot"].state))
@@ -151,7 +151,7 @@ def tick(sid: str):
 
 
 @app.post("/api/{sid}/pause")
-def pause(sid: str):
+async def pause(sid: str):
     s = session(sid)
     if s["agent"] and s["robot"].steps < HORIZON and not s["robot"].success:
         s["running"] = not s["running"]
@@ -159,7 +159,7 @@ def pause(sid: str):
 
 
 @app.post("/api/{sid}/perturb")
-def perturb(sid: str, req: Perturb):
+async def perturb(sid: str, req: Perturb):
     s = session(sid)
     env = s["robot"]
     rng = np.random.default_rng(env.seed + env.steps + (70000 if req.kind == "target" else 80000))
@@ -175,17 +175,19 @@ def perturb(sid: str, req: Perturb):
 
 @app.get("/api/status")
 def status():
-    counts = {split: len(load_episodes(ROOT / "data/human", split, "human")) for split in ("train", "val", "test")}
-    return {"job": job, "episodes": counts}
+    episodes = {split: load_episodes(ROOT / "data/human", split, "human") for split in ("train", "val", "test")}
+    counts = {split: len(eps) for split, eps in episodes.items()}
+    successful = {split: sum(e.get("metrics", {}).get("success", False) for e in eps) for split, eps in episodes.items()}
+    return {"job": job, "episodes": counts, "successful_episodes": successful}
 
 
 @app.post("/api/train")
-def train_human():
+async def train_human():
     if job["status"] == "training":
         raise HTTPException(409, "Training already running")
-    counts = status()["episodes"]
+    counts = status()["successful_episodes"]
     if counts["train"] < 2 or counts["val"] < 1:
-        raise HTTPException(409, "Record at least 2 training episodes and 1 validation episode in different layouts")
+        raise HTTPException(409, "Record at least 2 successful training episodes and 1 successful validation episode in different layouts")
     if any(s["running"] for s in sessions.values()):
         raise HTTPException(409, "Pause robot execution before training")
     job.clear(); job.update(status="training")
@@ -201,9 +203,10 @@ def train_human():
 
 
 @app.get("/api/results")
-def results():
+async def results():
     path = ROOT / "assets/results.json"
     return json.loads(path.read_text()) if path.exists() else {"results": []}
 
 
 app.mount("/static", StaticFiles(directory=UI), name="static")
+

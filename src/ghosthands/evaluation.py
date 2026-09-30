@@ -48,6 +48,8 @@ def evaluate(data: Path, checkpoints: Path, output: Path, count: int = 100) -> d
                     if env.success and (suite not in {"target_shift", "object_shift"} or t >= 25):
                         break
                 row = {"suite": suite, "model": name, "seed": seed, **env.metrics()}
+                if suite in {"target_shift", "object_shift"}:
+                    row["efficiency"] = None  # initial-layout lower bound is invalid after intervention
                 rows.append(row)
                 batch.append(row)
             wins = sum(r["success"] for r in batch)

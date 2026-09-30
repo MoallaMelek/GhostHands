@@ -34,6 +34,11 @@ def train(data: Path, output: Path, kind: str, epochs: int = 60, seed: int = 42,
     torch.set_num_threads(2)
     torch.use_deterministic_algorithms(True)
     tr, va = load_episodes(data, "train", source), load_episodes(data, "val", source)
+    rejected = 0
+    if source == "human":
+        rejected = sum(not e.get("metrics", {}).get("success", False) for e in tr + va)
+        tr = [e for e in tr if e.get("metrics", {}).get("success", False)]
+        va = [e for e in va if e.get("metrics", {}).get("success", False)]
     if len(tr) < 2 or not va:
         raise ValueError("Need at least two training episodes and one independent validation episode")
     assert_disjoint(tr, va)
@@ -46,7 +51,8 @@ def train(data: Path, output: Path, kind: str, epochs: int = 60, seed: int = 42,
     digest = hashlib.sha256(json.dumps(tr + va, sort_keys=True).encode()).hexdigest()
     metadata = {"kind": kind, "seed": seed, "source": source, "train_episodes": len(tr),
                 "val_episodes": len(va), "dataset_sha256": digest, "schema": 1,
-                "torch_version": str(torch.__version__), "context": 8, "epochs_requested": epochs}
+                "torch_version": str(torch.__version__), "context": 8, "epochs_requested": epochs,
+                "excluded_unsuccessful_episodes": rejected}
     for epoch in range(epochs):
         model.train()
         order = torch.randperm(len(x))
