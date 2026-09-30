@@ -1,3 +1,23 @@
+import {
+  CRUISE,
+  Z_MIN,
+  Z_MAX,
+  XY_MIN,
+  XY_MAX,
+  wrap,
+  clamp,
+  project as projectPoint,
+  unproject,
+  coverPoint,
+  handPose,
+  HandTeleop,
+} from "./geometry.js";
+
+// A published version: 0.10.22 does not exist on npm, which silently broke the webcam.
+const VISION = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21";
+const HAND_MODEL =
+  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+
 const $ = (id) => document.getElementById(id);
 let sid,
   snap,
@@ -6,12 +26,12 @@ let sid,
   running = false,
   busy = false,
   close = false;
-let desired = [0.5, 0.5, 0.32, 0],
-  landmarks = null,
+let desired = [0.5, 0.5, CRUISE, 0],
   tracker = null,
   cameraStream = null,
-  calibrated = false,
-  palmReference = 0.2;
+  hand = null,
+  lastVideoTime = -1;
+const teleop = new HandTeleop();
 let humanTrail = [],
   robotTrail = [],
   nextSeed = 20000,
@@ -19,6 +39,10 @@ let humanTrail = [],
   controlActive = false;
 function message(text) {
   $("message").textContent = text;
+}
+function stageNote(text) {
+  $("stageNote").textContent = text || "";
+  $("stageNote").hidden = !text;
 }
 async function api(path, body) {
   const response = await fetch("/api/" + path, {
@@ -69,30 +93,30 @@ function update(data) {
     $("provenance").textContent =
       `Training source: ${data.metadata.source} · ${data.metadata.train_episodes} training / ${data.metadata.val_episodes} validation episodes · checkpoint epoch ${data.metadata.epoch}.`;
   }
+  $("handStatus").textContent = coach();
+}
+function setGrip(closed) {
+  close = closed;
+  $("grip").setAttribute("aria-pressed", String(close));
+  $("grip").textContent = close ? "Open gripper" : "Close gripper";
 }
 async function reset() {
   if (recording)
     throw Error("Save your current recording before starting a new layout.");
   const data = await api(sid ? sid + "/reset" : "session", { seed: demoSeed++ });
   if (data.id) sid = data.id;
-  desired = [0.5, 0.5, 0.32, 0];
-  close = false;
+  desired = [0.5, 0.5, CRUISE, 0];
+  setGrip(false);
   controlActive = false;
-  $("height").value = 0.32;
+  $("height").value = CRUISE;
   $("yaw").value = 0;
   humanTrail = [];
-  $("grip").setAttribute("aria-pressed", "false");
-  $("grip").textContent = "Close gripper";
   update(data);
 }
+
+// ---------- rendering ----------
 function project(canvas, p) {
-  const w = canvas.clientWidth,
-    h = canvas.clientHeight,
-    scale = Math.min(w * 0.6, h * 0.96);
-  return [
-    w / 2 + (p[0] - p[1]) * scale,
-    h * 0.25 + (p[0] + p[1]) * 0.34 * scale - p[2] * scale * 0.9,
-  ];
+  return projectPoint(canvas.clientWidth, canvas.clientHeight, p);
 }
 function line(ctx, canvas, a, b, color, width = 1) {
   ctx.strokeStyle = color;
@@ -102,18 +126,21 @@ function line(ctx, canvas, a, b, color, width = 1) {
   ctx.lineTo(...project(canvas, b));
   ctx.stroke();
 }
-function polygon(ctx, points, fill, stroke) {
+function polygon(ctx, points, fill, stroke, width = 1) {
   ctx.beginPath();
   points.forEach((p, i) => (i ? ctx.lineTo(...p) : ctx.moveTo(...p)));
   ctx.closePath();
-  ctx.fillStyle = fill;
-  ctx.fill();
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
   if (stroke) {
     ctx.strokeStyle = stroke;
+    ctx.lineWidth = width;
     ctx.stroke();
   }
 }
-function cube(ctx, canvas, pos, yaw, color, size = 0.08) {
+function cube(ctx, canvas, pos, yaw, color, size = 0.08, glow = false) {
   const corners = [
     [-1, -1],
     [1, -1],
@@ -131,14 +158,19 @@ function cube(ctx, canvas, pos, yaw, color, size = 0.08) {
     project(canvas, [p[0], p[1], Math.max(0, p[2] - size / 2)]),
   );
   polygon(ctx, [...bottom], "#16272b");
-  for (let i = 0; i < 4; i++)
+  // Draw only faces turned toward the viewer (+x +y in table coordinates).
+  for (let i = 0; i < 4; i++) {
+    const a = corners[i],
+      b = corners[(i + 1) % 4];
+    if ((a[0] + b[0]) / 2 - pos[0] + (a[1] + b[1]) / 2 - pos[1] <= 0) continue;
     polygon(
       ctx,
       [bottom[i], bottom[(i + 1) % 4], top[(i + 1) % 4], top[i]],
       i % 2 ? "#943f47" : "#be5960",
       "#e28b8c",
     );
-  polygon(ctx, top, color, "#ffb2a5");
+  }
+  polygon(ctx, top, color, glow ? "#8af3ce" : "#ffb2a5", glow ? 3 : 1);
   const center = project(canvas, [pos[0], pos[1], pos[2] + size / 2 + 0.002]);
   const end = project(canvas, [
     pos[0] + Math.cos(yaw) * 0.03,
@@ -151,6 +183,16 @@ function cube(ctx, canvas, pos, yaw, color, size = 0.08) {
   ctx.moveTo(...center);
   ctx.lineTo(...end);
   ctx.stroke();
+}
+// Human-panel teleoperation aid only; never reaches the policy or the dataset.
+function alignment(s) {
+  const attached = s[13] > 0,
+    goal = attached ? [s[8], s[9], s[11]] : [s[4], s[5], s[7]];
+  return {
+    attached,
+    over: Math.hypot(s[0] - goal[0], s[1] - goal[1]) < 0.04,
+    turned: Math.abs(wrap(s[3] - goal[2])) < (attached ? 0.2 : 0.3),
+  };
 }
 function draw(canvas, s, trail, isRobot) {
   if (!s) return;
@@ -167,6 +209,8 @@ function draw(canvas, s, trail, isRobot) {
   const c = canvas.getContext("2d");
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.clearRect(0, 0, width, height);
+  const live = !isRobot && input === "webcam";
+  const aligned = isRobot ? null : alignment(s);
   polygon(
     c,
     [
@@ -175,7 +219,7 @@ function draw(canvas, s, trail, isRobot) {
       [1, 1, 0],
       [0, 1, 0],
     ].map((p) => project(canvas, p)),
-    "#15222d",
+    live ? "#15222db0" : "#15222d",
     "#355060",
   );
   for (let k = 0; k <= 10; k++) {
@@ -184,6 +228,7 @@ function draw(canvas, s, trail, isRobot) {
   }
   const r = 0.065,
     angle = s[11],
+    targetGlow = aligned && aligned.attached && aligned.over && aligned.turned,
     target = [
       [-r, -r],
       [r, -r],
@@ -196,7 +241,13 @@ function draw(canvas, s, trail, isRobot) {
         0.003,
       ]),
     );
-  polygon(c, target, "#17463e", "#8af3ce");
+  polygon(
+    c,
+    target,
+    targetGlow ? "#1f6a58" : "#17463e",
+    "#8af3ce",
+    targetGlow ? 3 : 1,
+  );
   line(
     c,
     canvas,
@@ -221,23 +272,46 @@ function draw(canvas, s, trail, isRobot) {
   if (isRobot)
     for (let i = 1; i < humanTrail.length; i++)
       line(c, canvas, humanTrail[i - 1], humanTrail[i], "#758eb22a", 1);
+  // Shadow on the table, directly below the gripper: this is what you aim with.
+  const shadow = project(canvas, [s[0], s[1], 0]);
+  c.strokeStyle = "#8fb4cc";
+  c.lineWidth = 1.5;
+  c.beginPath();
+  c.ellipse(shadow[0], shadow[1], 9, 3.5, 0, 0, Math.PI * 2);
+  c.stroke();
   line(c, canvas, [s[0], s[1], 0], s.slice(0, 3), "#668598", 1);
-  cube(c, canvas, s.slice(4, 7), s[7], "#ef8a88");
+  if (!isRobot && s[2] < CRUISE - 0.01)
+    // Cable up to the cruise plane, where the cursor / palm anchors the gripper.
+    line(c, canvas, [s[0], s[1], s[2] + 0.11], [s[0], s[1], CRUISE], "#b6c6fb55", 1);
+  cube(
+    c,
+    canvas,
+    s.slice(4, 7),
+    s[7],
+    "#ef8a88",
+    0.08,
+    aligned && !aligned.attached && aligned.over && aligned.turned,
+  );
+  if (!isRobot && controlActive) {
+    const d = project(canvas, desired.slice(0, 3));
+    c.strokeStyle = "#b6c6fb66";
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(d[0] - 6, d[1]);
+    c.lineTo(d[0] + 6, d[1]);
+    c.moveTo(d[0], d[1] - 6);
+    c.lineTo(d[0], d[1] + 6);
+    c.stroke();
+  }
   const p = project(canvas, s.slice(0, 3));
-  c.strokeStyle = isRobot ? "#9af6d5" : "#b6c6fb";
-  c.lineWidth = 3;
+  const color = isRobot ? "#9af6d5" : "#b6c6fb";
   const span = s[12] ? 0.03 : 0.08;
   for (const side of [-1, 1]) {
     const x = s[0] + Math.cos(s[3]) * span * side,
-      y = s[1] + Math.sin(s[3]) * span * side;
-    line(
-      c,
-      canvas,
-      [x, y, s[2] + 0.11],
-      [x, y, s[2] + 0.025],
-      c.strokeStyle,
-      4,
-    );
+      y = s[1] + Math.sin(s[3]) * span * side,
+      // The +yaw jaw is tinted so a half-turn misalignment is visible.
+      jaw = side > 0 ? "#ffd27a" : color;
+    line(c, canvas, [x, y, s[2] + 0.11], [x, y, s[2] + 0.025], jaw, 4);
     line(
       c,
       canvas,
@@ -247,7 +321,7 @@ function draw(canvas, s, trail, isRobot) {
         y - Math.sin(s[3]) * 0.015 * side,
         s[2] + 0.025,
       ],
-      c.strokeStyle,
+      jaw,
       3,
     );
   }
@@ -256,30 +330,114 @@ function draw(canvas, s, trail, isRobot) {
     canvas,
     [s[0] - Math.cos(s[3]) * span, s[1] - Math.sin(s[3]) * span, s[2] + 0.11],
     [s[0] + Math.cos(s[3]) * span, s[1] + Math.sin(s[3]) * span, s[2] + 0.11],
-    c.strokeStyle,
+    color,
     6,
   );
+  c.strokeStyle = color;
+  c.lineWidth = 3;
   c.beginPath();
   c.arc(p[0], p[1], 4, 0, Math.PI * 2);
   c.stroke();
 }
+const BONES = [
+  [0, 1, 2, 3, 4],
+  [0, 5, 6, 7, 8],
+  [5, 9, 10, 11, 12],
+  [9, 13, 14, 15, 16],
+  [13, 17, 18, 19, 20],
+  [0, 17],
+];
+function drawHand(lm, out) {
+  const canvas = $("handOverlay"),
+    video = $("video"),
+    dpr = devicePixelRatio || 1,
+    w = canvas.clientWidth,
+    h = canvas.clientHeight;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+  }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (!lm) return;
+  const pt = (p) =>
+    coverPoint(p.x, p.y, video.videoWidth, video.videoHeight, w, h);
+  ctx.strokeStyle = "#8af3ce99";
+  ctx.lineWidth = 2;
+  for (const finger of BONES) {
+    ctx.beginPath();
+    finger.forEach((i, j) => (j ? ctx.lineTo(...pt(lm[i])) : ctx.moveTo(...pt(lm[i]))));
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#e5fff5";
+  for (const p of lm) {
+    ctx.beginPath();
+    ctx.arc(...pt(p), 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const [a, b] = [pt(lm[4]), pt(lm[8])];
+  ctx.strokeStyle = out.closed ? "#ffd27a" : "#e5fff566";
+  ctx.lineWidth = out.closed ? 3 : 1;
+  ctx.beginPath();
+  ctx.moveTo(...a);
+  ctx.lineTo(...b);
+  ctx.stroke();
+  ctx.strokeStyle = "#b6c6fb";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(out.point[0], out.point[1], 7, 0, Math.PI * 2);
+  ctx.stroke();
+}
 function render() {
+  if (input === "webcam") track();
   if (snap) {
     draw($("human"), snap.human, humanTrail, false);
     draw($("robot"), snap.robot, robotTrail, true);
   }
   requestAnimationFrame(render);
 }
+
+// One short instruction for the demonstrator, derived from the human-side state.
+function coach() {
+  if (!snap) return "";
+  const cam = input === "webcam";
+  if (cam && !hand) return "Show one hand to the camera";
+  if (cam && !hand.out.ready) return "Hold your open hand still…";
+  if (snap.human_metrics.success) return "Placed. Save the demonstration";
+  const s = snap.human,
+    a = alignment(s);
+  if (!a.over)
+    return a.attached
+      ? "Carry the block over the green target"
+      : cam
+        ? "Move your palm until the shadow is under the red block"
+        : "Move until the shadow is under the red block";
+  if (!a.turned)
+    return cam
+      ? "Turn your hand until the yellow jaw matches the white mark"
+      : "Q / E until the yellow jaw matches the white mark";
+  if (!a.attached && s[2] > 0.07)
+    return cam ? "Push your hand toward the camera to lower" : "Scroll down to lower";
+  if (a.attached)
+    return cam ? "Open your hand to release" : "Space to release";
+  return cam ? "Pinch thumb and index to grab" : "Space to grab";
+}
+
+// ---------- pointer input ----------
 $("human").addEventListener("pointermove", (e) => {
   if (input !== "pointer") return;
-  const rect = $("human").getBoundingClientRect(),
-    w = rect.width,
-    h = rect.height,
-    scale = Math.min(w * 0.6, h * 0.96);
-  const diff = (e.clientX - rect.left - w / 2) / scale,
-    sum = (e.clientY - rect.top - h * 0.25) / (0.34 * scale);
-  desired[0] = Math.max(0.05, Math.min(0.95, (sum + diff) / 2));
-  desired[1] = Math.max(0.05, Math.min(0.95, (sum - diff) / 2));
+  const rect = $("human").getBoundingClientRect();
+  // Anchor the cursor on the cruise-height plane so the gripper sits under it.
+  const [x, y] = unproject(
+    rect.width,
+    rect.height,
+    e.clientX - rect.left,
+    e.clientY - rect.top,
+    CRUISE,
+  );
+  desired[0] = clamp(x, XY_MIN, XY_MAX);
+  desired[1] = clamp(y, XY_MIN, XY_MAX);
   controlActive = true;
 });
 $("human").addEventListener(
@@ -287,7 +445,7 @@ $("human").addEventListener(
   (e) => {
     if (input !== "pointer") return;
     e.preventDefault();
-    desired[2] = Math.max(0.04, Math.min(0.5, desired[2] - e.deltaY * 0.0006));
+    desired[2] = clamp(desired[2] - e.deltaY * 0.0006, Z_MIN, Z_MAX);
     $("height").value = desired[2];
     controlActive = true;
   },
@@ -302,13 +460,13 @@ $("yaw").addEventListener("input", () => {
   controlActive = true;
 });
 function grip() {
-  close = !close;
-  $("grip").setAttribute("aria-pressed", String(close));
-  $("grip").textContent = close ? "Open gripper" : "Close gripper";
+  if (input === "webcam") return;
+  setGrip(!close);
   controlActive = true;
 }
 bind("grip", grip);
 document.addEventListener("keydown", (e) => {
+  if (input === "webcam") return;
   if (["INPUT", "SELECT", "BUTTON"].includes(document.activeElement.tagName))
     return;
   if (e.code === "Space") {
@@ -316,15 +474,16 @@ document.addEventListener("keydown", (e) => {
     grip();
   }
   if (e.key === "q" || e.key === "e") {
-    desired[3] += e.key === "q" ? -0.12 : 0.12;
-    desired[3] = Math.atan2(Math.sin(desired[3]), Math.cos(desired[3]));
+    desired[3] = wrap(desired[3] + (e.key === "q" ? -0.12 : 0.12));
     $("yaw").value = desired[3];
   }
 });
+
+// ---------- demo / recording / rollout ----------
 bind("newDemo", reset);
 bind("record", async () => {
-  if (input === "webcam" && !calibrated)
-    throw Error("Calibrate your open palm before recording.");
+  if (input === "webcam" && !hand?.out.ready)
+    throw Error("Show your hand to the camera and wait for tracking before recording.");
   update(
     await api(sid + "/record", { source: input, split: $("split").value }),
   );
@@ -369,24 +528,24 @@ bind("train", async () => {
   message("Training exclusively on your recorded human episodes.");
   refresh();
 });
-const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-const clamp = (x) => Math.max(-1, Math.min(1, x));
 async function tick() {
   if (busy || !sid) return;
   busy = true;
   try {
-    if (input === "webcam" && tracker && $("video").readyState >= 2) track();
-    if (controlActive && (input === "pointer" || landmarks)) {
+    const handReady = input === "webcam" && hand?.out.ready;
+    if (controlActive && (input === "pointer" || handReady)) {
       const s = snap.human,
         action = [
-          ...desired.slice(0, 3).map((v, i) => clamp((v - s[i]) / 0.035)),
-          clamp(wrap(desired[3] - s[3]) / 0.18),
+          ...desired
+            .slice(0, 3)
+            .map((v, i) => clamp((v - s[i]) / 0.035, -1, 1)),
+          clamp(wrap(desired[3] - s[3]) / 0.18, -1, 1),
           close ? 1 : -1,
         ];
       update(
         await api(sid + "/control", {
           action,
-          landmarks: input === "webcam" ? landmarks : null,
+          landmarks: handReady ? hand.landmarks : null,
         }),
       );
       humanTrail.push(snap.human.slice(0, 3));
@@ -404,126 +563,173 @@ async function tick() {
     busy = false;
   }
 }
-let lastVideo = -1,
-  lastPalm = null;
-bind("camera", async () => {
-  if (cameraStream) {
-    if (recording)
-      throw Error("Save your recording before changing input source.");
-    cameraStream.getTracks().forEach((t) => t.stop());
-    cameraStream = null;
-    input = "pointer";
-    landmarks = null;
-    controlActive = false;
-    $("videoWrap").hidden = true;
-    $("camera").textContent = "Enable webcam";
-    $("inputBadge").textContent = "POINTER INPUT";
-    return;
+
+// ---------- webcam input ----------
+function cameraError(e) {
+  switch (e?.name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Camera access was blocked. Allow the camera for this page (camera icon in the address bar), then press Enable webcam again. Embedded previews often cannot use cameras: open http://127.0.0.1:8765 in Chrome or Edge.";
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return "No camera was found. Connect or enable a webcam, then try again.";
+    case "NotReadableError":
+    case "AbortError":
+      return "The camera is in use or failed to start. Close other apps using it (Teams, Zoom, Camera, another browser tab) and try again.";
+    default:
+      return "Could not start the camera: " + (e?.message || e);
   }
+}
+async function loadTracker() {
+  if (tracker) return tracker;
+  const { HandLandmarker, FilesetResolver } = await import(
+    VISION + "/vision_bundle.mjs"
+  );
+  const vision = await FilesetResolver.forVisionTasks(VISION + "/wasm");
+  // GPU is ~3x faster per frame but compiles shaders on first use (seconds), so warm it up
+  // here, behind the loading note, and fall back to CPU if WebGL is unavailable.
+  const warmup = document.createElement("canvas");
+  warmup.width = 64;
+  warmup.height = 48;
+  for (const delegate of ["GPU", "CPU"]) {
+    try {
+      const candidate = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: HAND_MODEL, delegate },
+        runningMode: "VIDEO",
+        numHands: 1,
+        minHandDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.5,
+      });
+      candidate.detectForVideo(warmup, performance.now());
+      tracker = candidate;
+      return tracker;
+    } catch (e) {
+      if (delegate === "CPU") throw e;
+    }
+  }
+}
+function stopCamera() {
+  cameraStream?.getTracks().forEach((t) => t.stop());
+  cameraStream = null;
+  $("video").srcObject = null;
+  $("video").hidden = true;
+  input = "pointer";
+  hand = null;
+  teleop.reset();
+  lastVideoTime = -1;
+  controlActive = false;
+  drawHand(null);
+  stageNote("");
+  for (const id of ["height", "yaw", "grip"]) $(id).disabled = false;
+  $("calibrate").disabled = true;
+  $("camera").textContent = "Enable webcam";
+  $("inputBadge").textContent = "POINTER INPUT";
+  $("sceneLabel").textContent = "TEACH THE MOVEMENT";
+  if (snap) $("handStatus").textContent = coach();
+}
+bind("camera", async () => {
   if (recording)
     throw Error("Save your recording before changing input source.");
-  message(
-    "Loading hand tracking. Your browser will request webcam permission.",
-  );
-  const { HandLandmarker, FilesetResolver } =
-    await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm");
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm",
-  );
-  tracker = await HandLandmarker.createFromOptions(vision, {
-    baseOptions: {
-      modelAssetPath:
-        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-    },
-    runningMode: "VIDEO",
-    numHands: 1,
-  });
-  cameraStream = await navigator.mediaDevices.getUserMedia({
-    video: { width: 640, height: 480 },
-    audio: false,
-  });
-  $("video").srcObject = cameraStream;
-  await $("video").play();
-  $("videoWrap").hidden = false;
-  input = "webcam";
-  calibrated = false;
-  controlActive = false;
-  $("camera").textContent = "Use pointer";
-  $("calibrate").disabled = false;
-  $("inputBadge").textContent = "WEBCAM INPUT";
-  message("Hold your open palm at comfortable distance, then calibrate depth.");
+  if (cameraStream) return stopCamera();
+  if (!navigator.mediaDevices?.getUserMedia)
+    throw Error(
+      "This page cannot reach a camera. Open http://127.0.0.1:8765 (not a LAN address or file) in Chrome or Edge.",
+    );
+  $("camera").disabled = true;
+  try {
+    stageNote("Waiting for camera permission…");
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+        audio: false,
+      });
+    } catch (e) {
+      stageNote("");
+      throw Error(cameraError(e));
+    }
+    const video = $("video");
+    video.srcObject = cameraStream;
+    video.hidden = false;
+    await video.play();
+    stageNote("Camera on. Loading hand tracker…");
+    try {
+      await loadTracker();
+    } catch (e) {
+      stopCamera();
+      throw Error(
+        "The camera works, but the hand tracker could not be downloaded (internet is needed on first use): " +
+          e.message,
+      );
+    }
+    input = "webcam";
+    teleop.reset();
+    controlActive = false;
+    for (const id of ["height", "yaw", "grip"]) $(id).disabled = true;
+    $("calibrate").disabled = false;
+    $("camera").textContent = "Use pointer";
+    $("inputBadge").textContent = "WEBCAM INPUT";
+    stageNote("");
+    message(
+      "Webcam on. Your palm carries the gripper: push toward the camera to lower, pull back to lift, turn your hand to rotate, pinch to grab.",
+    );
+  } finally {
+    $("camera").disabled = false;
+  }
 });
 bind("calibrate", () => {
-  if (!lastPalm) throw Error("Show your hand to the camera first.");
-  palmReference = lastPalm;
-  calibrated = true;
-  controlActive = true;
-  message(
-    "Depth calibrated. Bring your palm closer to lift; move it away to lower.",
-  );
+  if (!hand) throw Error("Show your hand to the camera first.");
+  teleop.reset();
+  message("Hold your open hand still for a moment to set the new neutral pose.");
 });
 function track() {
   const video = $("video");
-  if (video.currentTime === lastVideo) return;
-  lastVideo = video.currentTime;
-  const result = tracker.detectForVideo(video, performance.now());
-  if (!result.landmarks.length) {
-    landmarks = null;
-    lastPalm = null;
-    $("handStatus").textContent = "Hand lost · control paused";
+  if (!tracker || video.readyState < 2 || video.currentTime === lastVideoTime)
+    return;
+  lastVideoTime = video.currentTime;
+  let result;
+  try {
+    result = tracker.detectForVideo(video, performance.now());
+  } catch (e) {
+    message("Hand tracking error: " + e.message);
     return;
   }
-  const lm = result.landmarks[0];
-  landmarks = lm.map((p) => [p.x, p.y, p.z]);
-  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-  lastPalm = dist(lm[0], lm[9]);
-  const ratio = dist(lm[4], lm[8]) / Math.max(0.01, dist(lm[5], lm[17]));
-  if (ratio < 0.35) close = true;
-  else if (ratio > 0.55) close = false;
-  const target = [
-    0.05 + 0.9 * (1 - lm[9].x),
-    0.05 + 0.9 * lm[9].y,
-    Math.max(0.04, Math.min(0.5, 0.22 + (lastPalm / palmReference - 1) * 0.5)),
-    Math.atan2(lm[5].y - lm[17].y, -(lm[5].x - lm[17].x)),
-  ];
-  if (calibrated) {
-    for (let i = 0; i < 3; i++) desired[i] += 0.25 * (target[i] - desired[i]);
-    desired[3] = wrap(desired[3] + 0.25 * wrap(target[3] - desired[3]));
+  const lm = result.landmarks?.[0];
+  if (!lm) {
+    if (hand) teleop.lost();
+    hand = null;
+    drawHand(null);
+    $("sceneLabel").textContent = "NO HAND · CONTROL PAUSED";
+    if (snap) $("handStatus").textContent = coach();
+    return;
   }
-  const c = $("landmarks"),
-    ctx = c.getContext("2d");
-  c.width = 290;
-  c.height = 216;
-  ctx.clearRect(0, 0, 290, 216);
-  ctx.strokeStyle = "#8af3ce";
-  ctx.lineWidth = 2;
-  for (const finger of [
-    [0, 1, 2, 3, 4],
-    [0, 5, 6, 7, 8],
-    [5, 9, 10, 11, 12],
-    [9, 13, 14, 15, 16],
-    [13, 17, 18, 19, 20],
-    [0, 17],
-  ]) {
-    ctx.beginPath();
-    finger.forEach((i, j) =>
-      j
-        ? ctx.lineTo(lm[i].x * 290, lm[i].y * 216)
-        : ctx.moveTo(lm[i].x * 290, lm[i].y * 216),
+  const canvas = $("human"),
+    pose = handPose(
+      lm,
+      result.worldLandmarks?.[0],
+      video.videoWidth,
+      video.videoHeight,
+    ),
+    out = teleop.update(
+      pose,
+      performance.now() / 1000,
+      canvas.clientWidth,
+      canvas.clientHeight,
+      video.videoWidth,
+      video.videoHeight,
     );
-    ctx.stroke();
+  hand = { landmarks: lm.map((p) => [p.x, p.y, p.z]), out };
+  if (out.ready) {
+    desired = out.desired;
+    setGrip(out.closed);
+    controlActive = true;
+    $("height").value = desired[2];
+    $("yaw").value = desired[3];
   }
-  for (const p of lm) {
-    ctx.beginPath();
-    ctx.arc(p.x * 290, p.y * 216, 2, 0, Math.PI * 2);
-    ctx.fillStyle = "#e5fff5";
-    ctx.fill();
-  }
-  $("handStatus").textContent = calibrated
-    ? close
-      ? "PINCH / CLOSED"
-      : "OPEN HAND"
-    : "Open palm → calibrate depth";
+  $("sceneLabel").textContent = out.ready
+    ? `HAND TRACKED · HEIGHT ${Math.round(desired[2] * 100)} CM · ${out.closed ? "PINCHED" : "OPEN"}`
+    : "HAND FOUND · HOLD STILL";
+  drawHand(lm, out);
+  if (snap) $("handStatus").textContent = coach();
 }
 async function refresh() {
   try {

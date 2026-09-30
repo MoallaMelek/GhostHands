@@ -45,25 +45,24 @@
             </div>
             <span class="badge" id="inputBadge">POINTER INPUT</span>
           </div>
-          <div class="scene-wrap">
+          <div class="scene-wrap" id="humanStage">
+            <video id="video" autoplay playsinline muted hidden></video>
             <canvas
               id="human"
               aria-label="Human controlled tabletop"
               tabindex="0"
             ></canvas>
-            <div class="scene-label">TEACH THE MOVEMENT</div>
-            <div class="video-wrap" hidden id="videoWrap">
-              <video id="video" autoplay playsinline muted></video
-              ><canvas id="landmarks"></canvas>
-            </div>
+            <canvas id="handOverlay" aria-hidden="true"></canvas>
+            <div class="scene-label" id="sceneLabel">TEACH THE MOVEMENT</div>
+            <div class="stage-note" id="stageNote" role="status" hidden></div>
             <div class="scene-footer">
-              <span id="handStatus">Move across the table · wheel to lift</span
+              <span id="handStatus">Move until the shadow is under the red block</span
               ><span id="recordStatus">● NOT RECORDING</span>
             </div>
           </div>
           <div class="controls">
-            <button id="camera">Enable webcam</button
-            ><button id="calibrate" disabled>Calibrate depth</button
+            <button id="camera" class="primary">Enable webcam</button
+            ><button id="calibrate" disabled>Re-centre hand</button
             ><button id="newDemo">New layout</button>
           </div>
           <div class="sliders">
@@ -96,9 +95,10 @@
             ><button id="save" disabled>Save</button>
           </div>
           <p class="hint">
-            Pointer: move to position · wheel = height · Q/E = rotation · Space
-            = grip.<br />Webcam: pinch = grip · palm direction = yaw · palm
-            scale = approximate depth.
+            Webcam: your palm carries the gripper · push toward the camera to
+            lower, pull back to lift · turn your hand to rotate · pinch thumb and
+            index to grab.<br />Pointer: the gripper follows the cursor · wheel =
+            height · Q/E = rotation · Space = grip.
           </p>
         </article>
         <div class="bridge" aria-hidden="true">

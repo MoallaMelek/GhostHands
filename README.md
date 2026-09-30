@@ -84,23 +84,40 @@ the comparison of MuJoCo, PyBullet, ManiSkill, Isaac and the custom environment.
 
 ## Human demonstration pipeline
 
-Enable the webcam, hold an open palm comfortably, and choose **Calibrate depth**.
-Palm location controls xy; palm scale provides an approximate depth control; palm direction
-controls yaw; a palm-normalized thumb/index distance with hysteresis controls closure.
-This is teleoperation for collecting labels, not the learned robot policy.
+Open the demo in Chrome or Edge at `http://127.0.0.1:8765` (embedded preview panes usually
+block cameras) and choose **Enable webcam**. The mirrored camera fills the left stage, the
+tracked hand is drawn over it, and the virtual gripper rides on your palm:
 
-Record an episode, approach the cube, align the gripper with the cube's direction mark,
-lower, pinch to grasp, lift, move to the target, align with its direction mark, lower,
-then release. Wait briefly for stable placement and save. **New layout** resets the task.
-Select training/validation/test before recording. Do not reuse a layout across splits.
+| Your hand | Gripper |
+|---|---|
+| Move across the camera view | Moves across the table; at cruise height it sits exactly on your palm |
+| Push toward the camera / pull back | Lowers / lifts (hand distance relative to your neutral pose) |
+| Turn the hand like a dial | Rotates at 2x, so a comfortable +-90 degrees of wrist roll covers the full circle |
+| Pinch thumb and index / open | Closes / opens (3 cm / 5 cm hysteresis) |
 
-Pointer fallback: move over the tabletop to control xy, wheel or slider for height,
-Q/E or slider for yaw, and Space or the gripper button for closure. Keyboard shortcuts
-apply when focus is outside a form control. Recording resets the scene to its initial state.
+The neutral pose is captured automatically after ~0.6 s of steady tracking; **Re-centre hand**
+captures it again. Distance is a weak-perspective fit of image landmarks to MediaPipe world
+landmarks, so tilting the hand is not read as depth. It is a control proxy, not metric 3D
+reconstruction. Palm position, height and roll are smoothed with One Euro filters. The mapping
+lives in [`ui/geometry.js`](src/ghosthands/ui/geometry.js) and is unit tested. This is
+teleoperation for collecting labels, not the learned robot policy.
+
+Record an episode, move the gripper's shadow under the cube, turn until the yellow jaw matches
+the cube's white mark, lower, pinch, lift, carry it over the target, match its mark, then open
+your hand. A one-line prompt under the stage names the next step, and the cube or target
+outline lights up when you are aligned over it (a human-panel aid only; it never reaches the
+dataset or the policy). Wait briefly for stable placement and save. **New layout** resets the
+task. Select training/validation/test before recording. Do not reuse a layout across splits.
+
+Pointer fallback: the gripper follows the cursor (anchored at cruise height, so it sits
+under the cursor until you lower it), wheel or slider for height, Q/E or slider for yaw,
+and Space or the gripper button for closure. Keyboard shortcuts apply when focus is outside
+a form control. Recording resets the scene to its initial state.
 
 Raw webcam pixels stay in the browser. Saved data contains state/action sequences and,
-for webcam episodes, normalized landmarks. Tracking loss pauses commands; recalibrate
-when camera distance changes. Depth is a control proxy, not metric 3D reconstruction.
+for webcam episodes, normalized landmarks. Losing the hand pauses commands (no idle frames
+are recorded). Camera and tracker failures (blocked permission, no camera, camera in use,
+no internet for the MediaPipe download) are reported on screen.
 
 ## Models
 
@@ -128,6 +145,7 @@ ghosthands generate
 ghosthands train --model all --epochs 60 --seed 42
 ghosthands evaluate --count 100
 python -m pytest -q
+node --test tests/js/geometry.test.mjs   # teleoperation geometry (Node 20+)
 ```
 
 These commands generate 240 training and 40 validation episodes, train three models,
@@ -241,9 +259,11 @@ src/ghosthands/
   evaluation.py            Paired seeded rollouts and confidence intervals
   server.py                Local recording, training and rollout API
   ui/                      Browser interface and MediaPipe teleoperation
+    geometry.js            Pure hand/cursor -> gripper mapping (projection, filters, pose)
   cli.py                   Reproducible commands
 scripts/render_demo.py     GIF generated from actual simulation trajectories
 tests/                     Transforms, dynamics, splits, training/checkpoints and API
+  js/                      Node tests for the teleoperation geometry
 ```
 
 ## Milestones and next experiments
