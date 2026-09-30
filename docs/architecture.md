@@ -80,5 +80,8 @@ saved on explicit recording. Human-only training is available but requires multi
 Requested AI_TEAM.md and AGENTS.md templates were absent at the provided template path.
 No substitute collaboration protocol was invented. The restricted network initially made
 GitHub authentication appear invalid; an unrestricted check confirmed authenticated access.
-The requested dedicated Codex CLI review was attempted, but its execution environment
-could not recognize the repository. This is not a completed independent review.
+The dedicated Codex CLI review completed after applying a process-scoped ownership
+exception for this sandbox-created repository. It identified abandoned sessions blocking
+training and malformed landmarks partially mutating recordings. Both were corrected and
+covered by regression tests. The reviewer could not rerun tests inside its read-only
+environment; the primary implementation session ran the complete test suite.

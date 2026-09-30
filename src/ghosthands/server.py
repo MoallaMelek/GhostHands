@@ -81,19 +81,28 @@ async def control(sid: str, req: Control):
     action = np.asarray(req.action, dtype=np.float32)
     if not np.isfinite(action).all() or np.abs(action).max() > 1.001:
         raise HTTPException(422, "Actions must be finite and bounded")
+    if req.landmarks is not None:
+        if len(req.landmarks) != 21 or any(len(point) != 3 for point in req.landmarks):
+            raise HTTPException(422, "Expected 21 finite xyz landmarks")
+        if not np.isfinite(np.asarray(req.landmarks)).all():
+            raise HTTPException(422, "Expected 21 finite xyz landmarks")
     rec = s["record"]
     if rec is not None:
         if len(rec["actions"]) >= 3000:
             raise HTTPException(400, "Recording limit reached; save this episode")
         rec["observations"].append(s["human"].state.tolist())
         rec["actions"].append(action.tolist())
-        if req.landmarks is not None:
-            landmarks = np.asarray(req.landmarks)
-            if landmarks.shape != (21, 3) or not np.isfinite(landmarks).all():
-                rec["observations"].pop(); rec["actions"].pop()
-                raise HTTPException(422, "Expected 21 finite xyz landmarks")
         rec["landmarks"].append(req.landmarks)
     s["human"].step(action)
+    return snapshot(s)
+
+
+@app.post("/api/{sid}/reset")
+async def reset(sid: str, req: NewSession):
+    s = session(sid)
+    if s["record"] is not None:
+        raise HTTPException(409, "Save current recording first")
+    s["human"], s["seed"] = Tabletop(req.seed), req.seed
     return snapshot(s)
 
 
@@ -192,8 +201,10 @@ async def train_human():
     counts = status()["successful_episodes"]
     if counts["train"] < 2 or counts["val"] < 1:
         raise HTTPException(409, "Record at least 2 successful training episodes and 1 successful validation episode in different layouts")
-    if any(s["running"] for s in sessions.values()):
-        raise HTTPException(409, "Pause robot execution before training")
+    # A closed/reloaded browser can leave an idle session flagged as running.
+    # Training explicitly pauses all local rollouts; tick/resume are guarded above.
+    for s in sessions.values():
+        s["running"] = False
     job.clear(); job.update(status="training")
     def work():
         try:

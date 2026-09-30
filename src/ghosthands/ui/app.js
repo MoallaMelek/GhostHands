@@ -73,15 +73,16 @@ function update(data) {
 async function reset() {
   if (recording)
     throw Error("Save your current recording before starting a new layout.");
-  const data = await api("session", { seed: demoSeed++ });
-  sid = data.id;
+  const data = await api(sid ? sid + "/reset" : "session", { seed: demoSeed++ });
+  if (data.id) sid = data.id;
   desired = [0.5, 0.5, 0.32, 0];
   close = false;
   controlActive = false;
   $("height").value = 0.32;
   $("yaw").value = 0;
   humanTrail = [];
-  robotTrail = [];
+  $("grip").setAttribute("aria-pressed", "false");
+  $("grip").textContent = "Close gripper";
   update(data);
 }
 function project(canvas, p) {
