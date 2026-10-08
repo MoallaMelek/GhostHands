@@ -281,3 +281,16 @@ Git milestones preserve the architecture, learning pipeline, interface and measu
 No datasets, webcam recordings, credentials or `.env` files are tracked. The checked-in
 model weights are small, synthetic-trained project artifacts. The initial GitHub repository
 is private so its owner can review the prototype before publishing a portfolio claim.
+
+<!-- certifications:start -->
+## Relevant Certifications
+
+Related training completed by **Melek Moalla**, with the connection to this project stated below.
+
+<a href="https://learn.nvidia.com/certificates?id=nQezqvF2S3GIgeoy1hNHKw"><img width="360" src="assets/certifications/nvidia-deep-learning.svg" alt="NVIDIA: Fundamentals of Deep Learning" /></a>
+
+**NVIDIA · Fundamentals of Deep Learning**  
+Related to the PyTorch MLP and GRU policies that learn from demonstrations and are evaluated on held-out scenarios.  
+[Verify / issuer record](https://learn.nvidia.com/certificates?id=nQezqvF2S3GIgeoy1hNHKw) · [Original PDF](https://github.com/MoallaMelek/MoallaMelek/blob/master/certificates/nvidia-deep-learning.pdf)
+
+<!-- certifications:end -->
